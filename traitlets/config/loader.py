@@ -738,7 +738,14 @@ class ArgParseConfigLoader(CommandLineConfigLoader):
 
         self.parser_args = parser_args
         self.version = parser_kw.pop("version", None)
-        kwargs = dict(argument_default=argparse.SUPPRESS)
+        kwargs = dict(
+            argument_default=argparse.SUPPRESS,
+            ## If container-traits are handled by *argparse*, then
+            #  any regular trait with name that is a prefix of some container-trait
+            #  would get miss-classified as that container-trait.
+            #  NOTE: Possible to abbreviate if all args handled by *argparse*.
+            allow_abbrev=not bool(self.classes)
+            )
         kwargs.update(parser_kw)
         self.parser_kw = kwargs
 
