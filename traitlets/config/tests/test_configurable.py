@@ -82,20 +82,13 @@ foo_help=u"""Foo(Configurable) options
 
 bar_help=u"""Bar(Foo) options
 ----------------
---Bar.a=<Int>
-    The integer a.
-    Default: 0
 --Bar.bdict <key-1>=<value-1>...
     Default: {}
 --Bar.bset <set-item-1>...
     Default: set()
 --Bar.c=<Float>
     The string c.
-    Default: 0.0
---Bar.fdict=<key-1>=<value-1>...
-    Default: {}
---Bar.flist=<list-item-1>...
-    Default: []"""
+    Default: 0.0"""
 
 
 class TestConfigurable(TestCase):
