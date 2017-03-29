@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import json
+from collections import OrderedDict
 from ast import literal_eval
 
 from ipython_genutils.path import filefind
@@ -18,8 +19,7 @@ from ipython_genutils import py3compat
 from ipython_genutils.encoding import DEFAULT_ENCODING
 from six import text_type, string_types
 from traitlets.traitlets import (
-    HasTraits, Container, List, Dict, Any,
-)
+    HasTraits, Container, List, Dict, Any, TraitError)
 
 #-----------------------------------------------------------------------------
 # Exceptions
@@ -855,6 +855,64 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
     of common args, such as `ipython -c 'print 5'`, but still gets
     arbitrary config with `ipython --InteractiveShell.autoindent=False`"""
 
+    #: A maping of groups --> ``add_argument()`` methods of groups
+    #: created by :meth:`argparse.add_mutually_exclusive_group()`
+    #: for traits with ``x_arg_group`` tag. Actually the map's values
+    #: are tuples holding infos of the original call, to facilitate debugging
+    #: in case traits mismatch `reuired` flag.
+    #:
+    #:     {xgroup_name, (add_argument_method, declaring_trait_name, required_flag)}}
+    _exclusive_groups = {}
+
+    def _select_argparse_add_arg_method(self, trait_name, trait_metadata):
+        """
+        Select exclusive group add-args method if ``x_arg_group`` tag exists.
+
+        The exact method to use is depends on ``x_arg_group`` value:
+
+        - tag missing or None: :meth:`argparse.add_argument()`
+        - string: the name of the exclusive-group to invoke ``add_argument()`` on;
+          prefix the group-name with ``'+'`` char to make it "required"
+          (see - :meth:`argparse.add_mutually_exclusive_group(required=True)`).
+
+        TODO: check that the ``'+'`` char reamins unchanged after the first call.
+        """
+        xgroup_tag = trait_metadata.get('x_arg_group', None)
+
+        if xgroup_tag is None:
+            add_arg_method = self.parser.add_argument
+        else:
+            assert isinstance(xgroup_tag, string_types)
+
+            if xgroup_tag.startswith('+'):
+                xgroup_tag = xgroup_tag[1:]
+                required = True
+            else:
+                required = False
+
+            cached_group_tuple = self._exclusive_groups.get(xgroup_tag)
+            if cached_group_tuple:
+                add_arg_method, old_trait_name, cached_required = cached_group_tuple
+
+                ## Check `reuired` flag is preserved.
+                #
+                if cached_required != required:
+                    if required:
+                        new_flag, old_flag = '+', ''
+                    else:
+                        new_flag, old_flag = '', '+'
+
+                    raise TraitError(
+                        "Tag `x_arg_group='%s%s'` on trait `%s` missmatches `required` flag "
+                        "previously declared as '%s%s' on trait `%s`!" %
+                        (new_flag, xgroup_tag, trait_name, old_flag, xgroup_tag, old_trait_name))
+            else:
+                new_xgroup = self.parser.add_mutually_exclusive_group(required=required)
+                add_arg_method = new_xgroup.add_argument
+                self._exclusive_groups[xgroup_tag] = (add_arg_method, trait_name, required)
+
+        return add_arg_method
+
     def _add_arguments(self, aliases=None, flags=None, classes=None):
         self.alias_flags = {}
         # print aliases, flags
@@ -864,11 +922,10 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
             flags = self.flags
         if classes is None:
             classes = self.classes
-        paa = self.parser.add_argument
 
         ## An index of all container traits collected::
         #
-        #     { <traitname>: (<trait>, <argparse-kwds>) }
+        #     { <traitname>: (<trait>, <add-arg-method>, <argparse-kwds>) }
         #
         #  Used to add the correct type into the `config` tree.
         #  Used also for aliases, not to re-collect them.
@@ -877,16 +934,21 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
             for traitname, trait in cls.class_traits(config=True).items():
                 argname = '%s.%s' % (cls.__name__, traitname)
                 argparse_kwds = {'type': text_type}
+                metadata = trait.metadata
+                add_arg = self._select_argparse_add_arg_method(traitname, metadata)
+
+                ## argparse `nargs` & `action`
+                #
                 if isinstance(trait, (Container, Dict)):
-                    multiplicity = trait.metadata.get('multiplicity', 'append')
+                    multiplicity = metadata.get('multiplicity', 'append')
                     if multiplicity == 'append':
                         argparse_kwds['action'] = multiplicity
                     else:
                         argparse_kwds['nargs'] = multiplicity
                     if isinstance(trait, Dict):
                         argparse_kwds['type'] = fnt.partial(_kv_opt, traitname)
-                argparse_traits[argname] = (trait, argparse_kwds)
-                paa('--'+argname, **argparse_kwds)
+                argparse_traits[argname] = (trait, add_arg, argparse_kwds)
+                add_arg('--' + argname, **argparse_kwds)
 
         for keys, traitname in aliases.items():
             if not isinstance(keys, tuple):
@@ -896,7 +958,9 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
                 ## Is alias for a sequence-trait?
                 #
                 if traitname in argparse_traits:
-                    argparse_kwds.update(argparse_traits[traitname][1])
+                    arg_rec = argparse_traits[traitname]
+                    add_arg = arg_rec[1]
+                    argparse_kwds.update(arg_rec[2])
                     if 'action' in argparse_kwds:
                         ## A flag+alias should have `nargs='?'` multiplicity,
                         #  but base config-property had 'append' multiplicity!
@@ -907,10 +971,11 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
                                 "config-trait `%s` cannot be also a flag!'"
                                 % (key, traitname))
                 else:
+                    add_arg = self.parser.add_argument
                     if key in flags:
                         argparse_kwds['nargs'] = '?'
                 keys = ('-'+key, '--'+key) if len(key) is 1 else ('--'+key, )
-                paa(*keys, **argparse_kwds)
+                add_arg(*keys, **argparse_kwds)
 
         for keys, (value, _) in flags.items():
             if not isinstance(keys, tuple):
@@ -920,7 +985,7 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
                     self.alias_flags[self.aliases[key]] = value
                     continue
                 keys = ('-'+key, '--'+key) if len(key) is 1 else ('--'+key, )
-                paa(*keys, action='append_const', dest='_flags', const=value)
+                add_arg(*keys, action='append_const', dest='_flags', const=value)
 
     def _convert_to_config(self):
         """self.parsed_data->self.config, parse unrecognized extra args via KVLoader."""

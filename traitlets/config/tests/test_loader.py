@@ -23,8 +23,15 @@ from traitlets.config.loader import (
     KVArgParseConfigLoader,
     ConfigError,
 )
-from traitlets import (HasTraits, Union, List, Tuple, Dict, Int, Unicode)
+from traitlets import (HasTraits, Union, List, Tuple, Dict, Int, Bool, Unicode)
 from traitlets.config import Configurable
+import argparse
+from traitlets.traitlets import TraitError
+
+try:
+    from unittest.mock import MagicMock
+except ImportError:
+    from mock import MagicMock  # @UnusedImport
 
 
 pyfile = """
@@ -354,6 +361,112 @@ class TestArgParseKVCL(TestKeyValueCL):
                 {'k1': 'v1', 'k2': 2, 'k3': 'v 3'})
         self.assertEqual(config.CSub.bdict,
                 {'k': 'v', '22': 222})
+
+    def test_argparse_xgroups__method_selection(self):
+        cl = self.klass(log=log)
+
+        ## Setup mocks.
+        #
+        cl.parser = parser = MagicMock()
+        norm_meth = parser.add_argument
+        group1 = MagicMock()
+        group2 = MagicMock()
+        xgroup_method = parser.add_mutually_exclusive_group
+        xgroup_method.side_effect = [group1, group2]  # To be called only twice, rest cached.
+        g1_meth = group1.add_argument
+        g2_meth = group2.add_argument
+
+        cases = [
+            ({}, norm_meth),
+            ({'atag': None}, norm_meth),
+            ({'atag': 'str'}, norm_meth),
+            ({'x_arg_group': None, 'atag': 'str'}, norm_meth),
+            ({'x_arg_group': 'g1'}, g1_meth),
+            ({'x_arg_group': 'g1', 'tag': 'any'}, g1_meth),
+            ({'x_arg_group': '+g2'}, g2_meth),
+
+            ## Same groups are cached.
+            #
+            ({'x_arg_group': 'g1', 'tag': 'any'}, g1_meth),
+            ({'x_arg_group': '+g2'}, g2_meth),
+            ({'x_arg_group': '+g2'}, g2_meth),
+
+            ## Check missmatch '+' on later raises.
+            #
+            ({'x_arg_group': '+g1'}, None),
+            ({'x_arg_group': 'g2'}, None),
+
+            ## TODO: test empty/non-string groups
+
+        ]
+        for tags, exp_method in cases:
+            try:
+                if exp_method is None:
+                    with self.assertRaises(TraitError):
+                        cl._select_argparse_add_arg_method('new.trait', tags)
+                else:
+                    meth = cl._select_argparse_add_arg_method('old.trait', tags)
+                    self.assertIs(meth, exp_method)
+            except Exception as ex:
+                print("Failed: %s --> %s != %s, due to: %s" %
+                      (tags, meth, exp_method, ex), file=sys.stderr)
+                raise
+
+        ## Check 2 groups created in expected order.
+        self.assertEqual(xgroup_method.call_args_list,
+                         [({'required': False}, ), ({'required': True}, )])
+        ## Check cache as expected.
+        self.assertEqual(cl._exclusive_groups,
+                         {'g1': (g1_meth, 'old.trait', False),
+                          'g2': (g2_meth, 'old.trait', True)})
+
+    def test_argparse_xgroups__add_arguments(self):
+        cl = self.klass(log=log)
+#        aliases = {'D': 'CBase.adict', 'E': 'CSub.bdict'}
+#        argv = ["--CBase.adict", "k1=v1", "-D=k2=2", "-D", "k3=v 3", "-E", "k=v", "22=222"]
+#        config = cl.load_config(argv, aliases=aliases)
+
+        ## Setup mocks.
+        #
+        cl.parser = parser = MagicMock()
+        parser.add_argument.add_argument.side_effect = Exception('Expected xlusive only!')
+        group1 = MagicMock()
+        group2 = MagicMock()
+        xgroup_method = parser.add_mutually_exclusive_group
+        xgroup_method.side_effect = [group1, group2]  # To be called only twice, rest cached.
+        g1_meth = group1.add_argument
+        g2_meth = group2.add_argument
+
+        class CBase(HasTraits):
+            a1 = List().tag(config=True, x_arg_group='g1')
+            a2 = Bool().tag(config=True, multiplicity='*', x_arg_group='g1')
+            b1 = Dict().tag(config=True, multiplicity='append', x_arg_group='+g2')
+
+        class CSub(CBase):
+            b2 = Int().tag(config=True, x_arg_group='+g2')
+
+        class CSubBad(CBase):
+            b2 = Int().tag(config=True, x_arg_group='g2')
+
+        cl._add_arguments(classes=(CBase, CSub))
+
+        ## Check 2 groups created in expected order.
+        self.assertEqual(len(xgroup_method.call_args_list), 2, xgroup_method.call_args_list)
+        self.assertIn(({'required': False}, ), xgroup_method.call_args_list)
+        self.assertIn(({'required': True}, ), xgroup_method.call_args_list)
+
+        ## Check number of add_arg invocations.
+        #
+        self.assertEqual(len(g1_meth.call_args_list), 2, g1_meth.call_args_list)
+        self.assertEqual(len(g2_meth.call_args_list), 2, g2_meth.call_args_list)
+
+        ## Check cache as expected.
+        self.assertEqual(cl._exclusive_groups,
+                         {'g1': (g1_meth, 'a1.trait', False),
+                          'g2': (g2_meth, 'b1.trait', True)})
+
+        with self.assertRaises(TraitError):
+            cl._add_arguments(classes=(CBase, CSubBad))
 
 
 class TestConfig(TestCase):

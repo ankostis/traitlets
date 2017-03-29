@@ -193,6 +193,18 @@ class TestApplication(TestCase):
         self.assertEqual(app.foo.j, 10)
         self.assertEqual(app.bar.enabled, False)
 
+    def test_exclusive_groups(self):
+        import argparse
+
+        class TestApp(Application):
+            x1 = Unicode().tag(config=True, x_arg_group='xgroup1')
+            x2 = Bool().tag(config=True, x_arg_group='xgroup1')
+
+        app = TestApp()
+        with self.assertRaises(argparse.ArgumentError):
+#                                     'argument --TestApp.x2: not allowed with argument --TestApp.x1'):
+            app.parse_command_line("--TestApp.x1=abc --TestApp.x2=True".split())
+
     def test_cli_priority(self):
         """Test that loading config files does not override CLI options"""
         name = 'config.py'
