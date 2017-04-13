@@ -326,13 +326,13 @@ class Configurable(HasTraits):
             return '## ' + s.replace('\n', '\n#  ')
 
         # section header
-        breaker = '#' + '-' * 78
+        breaker = '##' + '-' * 78
         parent_classes = ', '.join(
             p.__name__ for p in cls.__bases__
             if issubclass(p, Configurable)
         )
 
-        s = "# %s(%s) configuration" % (cls.__name__, parent_classes)
+        s = "## %s(%s) configuration" % (cls.__name__, parent_classes)
         lines = [breaker, s, breaker]
         # get the description trait
         desc = cls.class_traits().get('description')
@@ -365,9 +365,9 @@ class Configurable(HasTraits):
                 # Truncate help to first line + "See also Original.trait"
                 if trait.help:
                     lines.append(c(trait.help.split('\n', 1)[0]))
-                lines.append('#  See also %s.%s' % (defining_class.__name__, name))
+                lines.append('#  See also: %s.%s' % (defining_class.__name__, name))
 
-            lines.append('# c.%s.%s = %s' % (cls.__name__, name, default_repr))
+            lines.append('#c.%s.%s = %s' % (cls.__name__, name, default_repr))
             lines.append('')
         return '\n'.join(lines)
 
