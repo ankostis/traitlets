@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import sys
-from io import StringIO
 from unittest import TestCase, skip
 
 try:
@@ -109,7 +108,7 @@ def class_to_names(classes):
 class TestApplication(TestCase):
 
     def test_log(self):
-        stream = StringIO()
+        stream = io.StringIO()
         app = MyApp(log_level=logging.INFO)
         handler = logging.StreamHandler(stream)
         # trigger reconstruction of the log formatter
@@ -288,10 +287,7 @@ class TestApplication(TestCase):
                  reason="Missing `contextlib.redirect_stdout` in python < 3.4!")
     def test_flags_help_msg(self):
         app = MyApp()
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            app.print_flag_help()
-        hmsg = stdout.getvalue()
+        hmsg = '\n'.join(app.emit_flag_help())
         self.assertRegex(hmsg, "(?<!-)-e, --enable\\b")
         self.assertRegex(hmsg, "(?<!-)-d, --disable\\b")
         self.assertIn("Equivalent to: [--Bar.enabled=True]", hmsg)
@@ -323,10 +319,7 @@ class TestApplication(TestCase):
                  reason="Missing `contextlib.redirect_stdout` in python < 3.4!")
     def test_aliases_help_msg(self):
         app = MyApp()
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
-            app.print_alias_help()
-        hmsg = stdout.getvalue()
+        hmsg = '\n'.join(app.emit_alias_help())
         self.assertRegex(hmsg, "(?<!-)-i, --fooi\\b")
         self.assertRegex(hmsg, "(?<!-)-j, --fooj\\b")
         self.assertIn("Equivalent to: [--Foo.i]", hmsg)
@@ -346,7 +339,7 @@ class TestApplication(TestCase):
         self.assertEqual(app.bar.b, 10)
 
     def test_warn_autocorrect(self):
-        stream = StringIO()
+        stream = io.StringIO()
         app = MyApp(log_level=logging.INFO)
         app.log.handlers = [logging.StreamHandler(stream)]
 
@@ -417,7 +410,7 @@ class TestApplication(TestCase):
     def test_generate_config_file_classes_to_include(self):
         class NotInConfig(HasTraits):
             from_hidden = Unicode('x', help="""From hidden class
-            
+
             Details about from_hidden.
             """).tag(config=True)
 
@@ -610,7 +603,7 @@ def test_show_config(capsys):
     cfg.MyApp.i = 5
     # don't show empty
     cfg.OtherApp
-    
+
     app = MyApp(config=cfg, show_config=True)
     app.start()
     out, err = capsys.readouterr()
@@ -623,7 +616,7 @@ def test_show_config_json(capsys):
     cfg = Config()
     cfg.MyApp.i = 5
     cfg.OtherApp
-    
+
     app = MyApp(config=cfg, show_config_json=True)
     app.start()
     out, err = capsys.readouterr()

@@ -377,9 +377,6 @@ class Application(SingletonConfigurable):
                     pprint.pformat(value, **pformat_kwargs),
                 ))
 
-    def print_alias_help(self):
-        print('\n'.join(self.emit_alias_help()))
-
     def emit_alias_help(self):
         """Print the alias part of the help."""
         if not self.aliases:
@@ -419,9 +416,6 @@ class Application(SingletonConfigurable):
                                alias, ex)
                 raise
 
-    def print_flag_help(self):
-        print('\n'.join(self.emit_flag_help()))
-
     def emit_flag_help(self):
         """Print the flag part of the help."""
         if not self.flags:
@@ -447,9 +441,6 @@ class Application(SingletonConfigurable):
                                flags, ex)
                 raise
 
-    def print_options(self):
-        print('\n'.join(self.emit_options_help()))
-
     def emit_options_help(self):
         if not self.flags and not self.aliases:
             return
@@ -465,9 +456,6 @@ class Application(SingletonConfigurable):
         for l in self.emit_alias_help():
             yield l
         yield ''
-
-    def print_subcommands(self):
-        print('\n'.join(self.emit_subcommands_help()))
 
     def emit_subcommands_help(self):
         """Print the subcommand part of the help."""
@@ -533,19 +521,11 @@ class Application(SingletonConfigurable):
         return '\n'.join(c.class_config_rst_doc()
                          for c in self._classes_inc_parents())
 
-    def print_description(self):
-        """Print the application description."""
-        print('\n'.join(self.emit_description()))
-
     def emit_description(self):
         """Yield lines with the application description."""
         for p in wrap_paragraphs(self.description or self.__doc__):
             yield p
             yield ''
-
-    def print_examples(self):
-        """Print usage and examples (see `emit_examples()`). """
-        print('\n'.join(self.emitt_examples()))
 
     def emit_examples(self):
         """Yield lines with the usage and examples.
