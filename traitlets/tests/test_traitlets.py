@@ -2575,21 +2575,56 @@ def test_override_default_instance():
     c._a_default = lambda self: 'overridden'
     assert c.a == 'overridden'
 
+
 def test_envvar_override_default(monkeypatch):
     class A(HasTraits):
-        b = CInt(allow_none=True).tag(config=True, envvar='MY_ENVVAR')
+        a = Unicode('', allow_none=True).tag(envvar='MY_ENVVAR')
+        b = CInt(0, allow_none=True).tag(envvar='MY_ENVVAR')
+
+        @validate('a', 'b')
+        def _convert_empty_str_to_none(self, p):
+            if p.value == '':
+                return None
+            return p.value
 
     a = A()
-    assert a.b == 0
+    assert (a.a, a.b) == ('', 0)
 
     monkeypatch.setenv('MY_ENVVAR', '1')
 
     a = A()
-    assert a.b == 1
-    a = A(a=2)
-    assert a.b == 1
+    assert (a.a, a.b) == ('1', 1)
 
-    a.b = 3
-    assert a.b == 3  # Direct assignments override env-var.
-    a.b = None
-    assert a.b == None
+    a = A(a=None, b=None)
+    assert (a.a, a.b) == (None, None)
+
+    ## Direct assignments override env-var.
+    #
+    a.a, a.b = ('2', 2)
+    assert (a.a, a.b) == ('2', 2)
+
+    a = A(a='2', b=2)
+    assert (a.a, a.b) == ('2', 2)
+
+    ## Check None assignment does not let envvar pass through.
+    #
+    a.a = a.b = None
+    assert (a.a, a.b) == (None, None)
+
+    a = A(a=None, b=None)
+    assert (a.a, a.b) == (None, None)
+
+    ## Check EMPTY VAR.
+    #
+    monkeypatch.setenv('MY_ENVVAR', '')
+
+    a = A()
+    assert (a.a, a.b) == (None, None)
+
+    ## Direct assignments override env-var.
+    #
+    a.a, a.b = ('2', 2)
+    assert (a.a, a.b) == ('2', 2)
+
+    a = A(a='2', b=2)
+    assert (a.a, a.b) == ('2', 2)

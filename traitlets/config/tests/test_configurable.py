@@ -703,7 +703,7 @@ def test_env_vars_priority(monkeypatch):
         'init': ('def', 'dyn'),  # values after "empty" construction
         'set': ('set', 'set'),  # values after direct assignment
         'cfg': ('cfg', 'cfg'),  # values after `update_config()
-        'skp': ('cfg', 'cfg'),  # values when `skip_env=True`
+        'skp': ('cfg', 'cfg'),  # values when `respect_env=False`
     }
     exp_with_envvar = {
         'init': ('env', 'env'),
@@ -718,19 +718,19 @@ def test_env_vars_priority(monkeypatch):
 
         conf = Conf()
         assert (conf.a, conf.b) == exp['init']
-        conf.update_config(cfg, skip_env=True)
+        conf.update_config(cfg, respect_env=False)
         assert (conf.a, conf.b) == exp['skp']
 
-        conf.update_config(cfg, skip_env=False)
+        conf.update_config(cfg, respect_env=True)
         assert (conf.a, conf.b) == exp['cfg']
 
         conf.a = conf.b = 'set'
         assert (conf.a, conf.b) == exp['set']
 
-        conf.update_config(cfg, skip_env=True)
+        conf.update_config(cfg, respect_env=False)
         assert (conf.a, conf.b) == exp['skp']
 
-        conf.update_config(cfg, skip_env=False)
+        conf.update_config(cfg, respect_env=True)
         assert (conf.a, conf.b) == exp['cfg']
 
         conf = Conf(a='set', b='set')

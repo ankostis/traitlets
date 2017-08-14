@@ -146,7 +146,7 @@ class Configurable(HasTraits):
                     my_config.merge(c[sname])
         return my_config
 
-    def _load_config(self, cfg, section_names=None, traits=None, skip_env=False):
+    def _load_config(self, cfg, section_names=None, traits=None, respect_env=True):
         """load traits from a Config object"""
 
         if traits is None:
@@ -162,7 +162,7 @@ class Configurable(HasTraits):
                 trait = traits.get(name)
                 if trait:
                     env_value = trait.get_env_value()
-                    if not skip_env and env_value is not None:
+                    if respect_env and env_value is not None:
                         ## Env-vars take precendance over config-params.
                         setattr(self, name, env_value)
                         continue
@@ -210,12 +210,12 @@ class Configurable(HasTraits):
         section_names = self.section_names()
         self._load_config(change.new, traits=traits, section_names=section_names)
 
-    def update_config(self, config, skip_env=False):
+    def update_config(self, config, respect_env=False):
         """
         Update config and load the new values
 
-        :param skip_env:
-            when true, does configs apply even for traits with `envvar` metadata.
+        :param , respect_env:
+            when true, configs ignored for traits with existing metadata `envvar`
         """
         # traitlets prior to 4.2 created a copy of self.config in order to trigger change events.
         # Some projects (IPython < 5) relied upon one side effect of this,
@@ -225,7 +225,7 @@ class Configurable(HasTraits):
         # but config consumers should not rely on this behavior.
         self.config = deepcopy(self.config)
         # load config
-        self._load_config(config, skip_env=skip_env)
+        self._load_config(config, respect_env=respect_env)
         # merge it into self.config
         self.config.merge(config)
         # TODO: trigger change event if/when dict-update change events take place

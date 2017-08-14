@@ -644,7 +644,7 @@ def test_env_vars_priority(monkeypatch):
         'init': ('def', 'dyn'),  # values after construction
         'set': ('set', 'set'),  # values after direct assignment
         'cfg': ('cfg', 'cfg'),  # values after `update_config()
-        'skp': ('cfg', 'cfg'),  # values when `skip_env=True`
+        'skp': ('cfg', 'cfg'),  # values when `respect_env=False`
         'cmd': ('cmd', 'cmd'),  # values after prsing cmd-line args
     }
     exp_with_envvar = {
@@ -655,17 +655,16 @@ def test_env_vars_priority(monkeypatch):
         'cmd': ('cmd', 'cmd'),
     }
 
-
     def check_priority(exp):
         cfg = Config()
         cfg.App.a = cfg.App.b = 'cfg'
 
         app = App()
         assert (app.a, app.b) == exp['init']
-        app.update_config(cfg, skip_env=True)
+        app.update_config(cfg, respect_env=False)
         assert (app.a, app.b) == exp['skp']
 
-        app.update_config(cfg, skip_env=False)
+        app.update_config(cfg, respect_env=True)
         assert (app.a, app.b) == exp['cfg']
 
         app.a = app.b = 'set'
