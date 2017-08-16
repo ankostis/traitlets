@@ -753,7 +753,7 @@ class Application(SingletonConfigurable):
                     filenames.append(loader.full_filename)
 
     @catch_config_error
-    def load_config_file(self, filename, path=None):
+    def load_config_file(self, filename, path=None, skip_env=False):
         """Load config files by filename and path."""
         filename, ext = os.path.splitext(filename)
         new_config = Config()
@@ -764,7 +764,7 @@ class Application(SingletonConfigurable):
             self._loaded_config_files.append(filename)
         # add self.cli_config to preserve CLI config priority
         new_config.merge(self.cli_config)
-        self.update_config(new_config)
+        self.update_config(new_config, skip_env=skip_env)
 
     def _classes_with_config_traits(self, classes=None):
         """
