@@ -521,8 +521,8 @@ class TraitType(BaseDescriptor):
                 value = obj.trait_defaults(self.name)
                 if value is Undefined:
                     raise TraitError("No default value found for "
-                        "the '%s' trait named '%s' of %r" % (
-                        type(self).__name__, self.name, obj))
+                                     "the '%s' trait named '%s' of %r" % (
+                                         type(self).__name__, self.name, obj))
 
             with obj.cross_validation_lock:
                 value = self._validate(obj, value)
@@ -1205,7 +1205,7 @@ class HasTraits(six.with_metaclass(MetaHasTraits, HasDescriptors)):
     def notify_change(self, change):
         """Notify observers of a change event"""
         return self._notify_observers(change)
-    
+
     def _notify_observers(self, event):
         """Notify observers of any event"""
         if not isinstance(event, Bunch):
