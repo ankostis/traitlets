@@ -526,3 +526,174 @@ class TestConfig(TestCase):
         self.assertEqual(c.Foo.trait, [1])
         self.assertEqual(c2.Foo.trait, [1])
 
+
+def test_Config_default_rank_simple():
+    c = Config()
+    c.set_default_rank(1)
+    assert c._merge_priorities == 1
+
+    c = Config()
+    c.set_default_rank(-1, reset=True)
+    assert c._merge_priorities == -1
+
+    c = Config()
+    c.set_default_rank(0, reset=True)
+    assert c._merge_priorities == 0
+
+
+def test_Config_default_rank():
+    from functools import partial as partial
+
+    def dict_config(rank, reset):
+        ## Check set-rank AFTER items.
+        c = Config({'A': {'a': 'foo', 'b': 'foo'}})
+        c.set_default_rank(rank, reset=reset)
+        return c
+
+    def grow_config(rank, reset):
+        ## Check set-rank BEFORE items.
+        c = Config()
+        c.set_default_rank(rank, reset=reset)
+        c.A.a = 'foo'
+        c.A.B.b = 'foo'
+        return c
+
+    cfacts = [
+        lambda rank: dict_config(rank, reset=True),
+        lambda rank: dict_config(rank, reset=True).copy(),
+        lambda rank: dict_config(rank, reset=False),
+        lambda rank: dict_config(rank, reset=False).copy(),
+        lambda rank: grow_config(rank, reset=True),
+        lambda rank: grow_config(rank, reset=True).copy(),
+        lambda rank: grow_config(rank, reset=False),
+        lambda rank: grow_config(rank, reset=False).copy(),
+    ]
+
+    for rank in [0, -1, 1, None]:
+        for fact in cfacts:
+            c = fact(rank)
+            assert c._merge_priorities == rank
+            assert c.A.rank_of() == c.A.rank_of('a') == c.A.rank_of('BAD') == rank
+            assert c.A.B.rank_of() == c.A.B.rank_of('b') == c.A.B.rank_of('BAD') == rank
+
+
+def check_config_priorities():
+    NO_RANK = None
+    LOW_RANK = 0
+    HIGH_RANK = 10
+
+    ## NO_RANK (not numeric)
+    #
+    c0 = Config()
+    c0.A.a = c0.A.b = c0.A.B.c = c0.A.B.d = 0
+    assert c0.A.rank_of() == NO_RANK  # Fail early if any problem here
+
+    ## HIGH RANK
+    #
+    c1 = Config()
+    c1.set_default_rank(HIGH_RANK)
+    c1.A.a = 11
+    c1.A.b = 11
+    c1.A.B.c = 111
+    c1.A.B.e = 111
+    assert c1.A.rank_of() == HIGH_RANK  # Fail early if any default-raks problematic.
+
+    ## Merge NUMERIC_RANK over NO_RANK
+    #
+    c = copy.deepcopy(c0)
+    c.merge(c1)
+    # Any rank prevail over NO_RANK.
+    assert c.A.a == 11
+    assert c.A.b == 11
+    assert c.A.B.c == 111
+    assert c.A.B.e == 111
+    # Unmatched items, unaffected
+    assert c.A.B.d == 0
+    ## Ranks:
+    #
+    # Overridden items follow new rank ...
+    assert c.A.rank_of('a') == c.A.rank_of('b') == c.A.B.rank_of('c') == c.A.B.rank_of('e') == HIGH_RANK
+    #  ... but config instances retain base rank...
+    assert c.rank_of() == c.A.rank_of() == c.A.B.rank_of() == NO_RANK
+    # ... and also non-matched items ...
+    assert c.A.B.rank_of('d') == NO_RANK
+    # ... and also non-existent items.
+    assert c.rank_of('bad') == c.A.B.rank_of('Bad') == NO_RANK
+
+    ## Merge NO_RANK on NUMERIC_RANK
+    #
+    c = copy.deepcopy(c1)
+    c.merge(c0)
+    # NO_RANK prevails over any rank.
+    assert c.A.a == c.A.b == c.A.B.c == c.A.B.d == 0
+    # Unmatched items, unaffected
+    assert c.A.B.e == 111
+    ## Ranks:
+    #
+    # Overridden items follow new rank ...
+    assert c.A.rank_of('a') == c.A.rank_of('b') == c.A.B.rank_of('c') == c.A.B.rank_of('d') == NO_RANK
+    #  ... but config instances retain base rank...
+    assert c.rank_of() == c.A.rank_of() == c.A.B.rank_of() == HIGH_RANK
+    # ... and also non-matched items ...
+    assert c.A.B.rank_of('e') == HIGH_RANK
+    # ... and also non-existent items.
+    assert c.rank_of('bad') == c.A.B.rank_of('Bad') == HIGH_RANK
+
+    ## LOW RANK
+    #
+    c2 = Config()
+    c2.set_default_rank(LOW_RANK)  # set rank BEFORE populating items, same behavior
+    c2.A.a = 2
+    c2.A.b = 22
+    c2.A.B.d = 222  # Note: it's 'd', not 'c', to mismatch between HIGH.
+
+
+    ## Merge LOWER on HIGH_RANK
+    #
+    c = copy.deepcopy(c1)
+    c.merge(c2)
+    # HIGH prevails over LOW.
+    assert c.A.a == 11
+    assert c.A.b == 11
+    assert c.A.B.c == 111
+    assert c.A.B.e == 111
+    # Only unmatched items overlay.
+    assert c.A.B.d == 222
+    ## Ranks:
+    #
+    # Non-overridden items follow BASE rank ...
+    assert c.A.rank_of('a') == c.A.rank_of('b') == c.A.B.rank_of('c') == c.A.B.rank_of('e') == HIGH_RANK
+    #  ... and config instances retain base rank...
+    assert c.rank_of() == c.A.rank_of() == c.A.B.rank_of() == HIGH_RANK
+    # ... only non-matched items have OVERLAY rank ...
+    assert c.A.B.rank_of('d') == LOW_RANK
+    # ... but no non-existent items.
+    assert c.rank_of('bad') == c.A.B.rank_of('Bad') == HIGH_RANK
+
+    ## Merge HIGH_RANK on LOWER
+    #
+    c = copy.deepcopy(c2)
+    c.merge(c1)
+    # HIG prevails over LOW.
+    assert c.A.a == c.A.b == 11
+    assert c.A.B.c == c.A.B.e == 111
+    # Unmatched items, unaffected
+    assert c.A.B.d == 222
+    ## Ranks:
+    #
+    # Overridden items follow new rank ...
+    assert c.A.rank_of('a') == c.A.rank_of('b') == c.A.B.rank_of('c') == c.A.B.rank_of('e') == HIGH_RANK
+    #  ... but config instances retain base rank...
+    assert c.rank_of() == c.A.rank_of() == c.A.B.rank_of() == LOW_RANK
+    # ... and also non-matched items ...
+    assert c.A.B.rank_of('d') == LOW_RANK
+    # ... and also non-existent items.
+    assert c.rank_of('bad') == c.A.B.rank_of('Bad') == LOW_RANK
+
+
+def test_config_priorities():
+    Config.enable_config_priorities(True)
+    try:
+        check_config_priorities()
+    finally:
+        Config.enable_config_priorities()
