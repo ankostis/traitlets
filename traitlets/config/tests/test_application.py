@@ -26,14 +26,15 @@ from pytest import mark
 
 from traitlets.config.configurable import Configurable
 from traitlets.config.loader import Config
-from traitlets.tests.utils import get_output_error_code, check_help_output, check_help_all_output
-
-from traitlets.config.application import (
-    Application
+from traitlets.tests.utils import (
+    get_output_error_code, check_help_output, check_help_all_output
 )
+
+from traitlets.config.application import Application
 
 from ipython_genutils.tempdir import TemporaryDirectory
 from traitlets import (
+    default,
     HasTraits,
     Bool, Bytes, Unicode, Integer, List, Tuple, Set, Dict
 )
@@ -243,8 +244,11 @@ class TestApplication(TestCase):
 
     def test_cli_priority(self):
         """Test that loading config files does not override CLI options"""
-        Config.enable_config_priorities(True)
+        Config.enable_config_priorities(False)
         try:
+            self.check_cli_priority()
+
+            Config.enable_config_priorities(True)
             self.check_cli_priority()
         finally:
             Config.enable_config_priorities()
@@ -651,6 +655,92 @@ def test_show_config_json(capsys):
     out, err = capsys.readouterr()
     displayed = json.loads(out)
     assert Config(displayed) == cfg
+
+
+def test_env_vars_priority(monkeypatch):
+    class Conf(Configurable):
+        b = Unicode().tag(config=True, envvar='MY_ENVVAR')
+
+        @default('b')
+        def set_a_dyn(self):
+            return 'dyn'
+
+    class App(Application):
+        a = Unicode('def').tag(config=True, envvar='MY_ENVVAR')
+        aliases = {'a': 'App.a', 'b': 'Conf.b'}
+
+        def reconf(self):
+            self.conf = Conf(parent=self)
+
+    exp_no_envvar = {
+        'init': ('def', 'dyn'),  # values after construction
+        'set': ('set', 'set'),  # values after direct assignment
+        'cfg': ('cfg', 'cfg'),  # values after `update_config()
+        'cli': ('cli', 'cli'),  # values after prsing cmd-line args
+    }
+    exp_with_envvar = {
+        'init': ('env', 'env'),
+        'set': ('set', 'set'),
+        'cfg': ('env', 'env'),
+        'cli': ('cli', 'cli'),
+    }
+
+    def check_priority(exp):
+        import copy
+
+        cfg = Config()
+        cfg.App.a = cfg.Conf.b = 'cfg'
+
+        cfg_set = Config()
+        cfg_set.App.a = cfg_set.Conf.b = 'set'
+        cfg_set.set_default_rank(Config.CLI_RANK + 10)
+
+        app = App(); app.reconf()
+        assert (app.a, app.conf.b) == exp['init']
+
+        app.update_config(cfg); app.reconf()
+        assert (app.a, app.conf.b) == exp['cfg']
+
+        app.update_config(cfg_set); app.reconf()
+        assert (app.a, app.conf.b) == exp['set']
+
+        ## Above had been check by test_config.
+        ## Now add cmd-line into the mix.
+
+        app.parse_command_line([]); app.reconf()
+        assert (app.a, app.conf.b) == exp['set']  # empty-cli do nothing.
+
+        app.parse_command_line('-a=cli -b=cli'.split()); app.reconf()
+        assert (app.a, app.conf.b) == exp['set']  # CLI lower than explict-set.
+
+        app = App(config=cfg); app.reconf()
+        assert (app.a, app.conf.b) == exp['cfg']
+
+        app.parse_command_line('-a=cli -b=cli'.split()); app.reconf()
+        assert (app.a, app.conf.b) == exp['cli']
+
+        app.update_config(cfg_set); app.reconf()
+        assert (app.a, app.conf.b) == exp['set']
+
+        app = App(); app.reconf()
+        assert (app.a, app.conf.b) == exp['init']
+
+        app.parse_command_line('-a=cli -b=cli'.split()); app.reconf()
+        assert (app.a, app.conf.b) == exp['cli']
+
+        app.update_config(cfg_set); app.reconf()
+        assert (app.a, app.conf.b) == exp['set']
+
+        ## Should only work with config-priorities enabled.
+        #
+        Config.enable_config_priorities(True)
+        try:
+            check_priority(exp_no_envvar)
+            monkeypatch.setenv('MY_ENVVAR', 'env')
+            check_priority(exp_with_envvar)
+        finally:
+            Config.enable_config_priorities()
+
 
 
 if __name__ == '__main__':
