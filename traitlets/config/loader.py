@@ -173,10 +173,29 @@ class Config(dict):
     """
     An attribute based dict supporting smart merges, optionally respecting ranks.
     """
+    ## Priorities disabled by default (see :meth:`enable_config_priorities()`).
+    FILE_RANK = None
+    ENV_RANK = None
+    CLI_RANK = None
 
     @classmethod
     def is_rank_superior(cls, base_rank, overlay_rank):
         return None in (base_rank, overlay_rank) or overlay_rank >= base_rank
+
+    @classmethod
+    def enable_config_priorities(cls, state=False):
+        """
+        Enable/disable Config-priorities machinery (default: disabled).
+
+        When disabled, configs overwriten always when merged
+        (e.g. file-configs overwrite ENVVARS!).
+        """
+        if state:
+            cls.FILE_RANK = 0
+            cls.ENV_RANK = 10
+            cls.CLI_RANK = 20
+        else:
+            cls.FILE_RANK = cls.ENV_RANK = cls.CLI_RANK = None
 
     #: The "priority ranks" for all direct children, which can be either:
     #:   - a scalar (`None` or an integer) which applies for all children, or

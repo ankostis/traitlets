@@ -203,9 +203,9 @@ class TestApplication(TestCase):
         self.assertEqual(app.foo.j, 10)
         self.assertEqual(app.bar.enabled, False)
 
-    def test_cli_priority(self):
-        """Test that loading config files does not override CLI options"""
+    def check_cli_priority(self):
         name = 'config.py'
+
         class TestApp(Application):
             value = Unicode().tag(config=True)
             config_file_loaded = Bool().tag(config=True)
@@ -229,11 +229,20 @@ class TestApplication(TestCase):
             assert app.config.TestApp.value == 'cli'
             assert app.value == 'cli'
 
+    def test_cli_priority(self):
+        """Test that loading config files does not override CLI options"""
+        Config.enable_config_priorities(True)
+        try:
+            self.check_cli_priority()
+        finally:
+            Config.enable_config_priorities()
+
     def test_ipython_cli_priority(self):
         # this test is almost entirely redundant with above,
         # but we can keep it around in case of subtle issues creeping into
         # the exact sequence IPython follows.
         name = 'config.py'
+
         class TestApp(Application):
             value = Unicode().tag(config=True)
             config_file_loaded = Bool().tag(config=True)
@@ -418,7 +427,7 @@ class TestApplication(TestCase):
     def test_generate_config_file_classes_to_include(self):
         class NotInConfig(HasTraits):
             from_hidden = Unicode('x', help="""From hidden class
-            
+
             Details about from_hidden.
             """).tag(config=True)
 
@@ -611,7 +620,7 @@ def test_show_config(capsys):
     cfg.MyApp.i = 5
     # don't show empty
     cfg.OtherApp
-    
+
     app = MyApp(config=cfg, show_config=True)
     app.start()
     out, err = capsys.readouterr()
@@ -624,7 +633,7 @@ def test_show_config_json(capsys):
     cfg = Config()
     cfg.MyApp.i = 5
     cfg.OtherApp
-    
+
     app = MyApp(config=cfg, show_config_json=True)
     app.start()
     out, err = capsys.readouterr()
