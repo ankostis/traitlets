@@ -65,7 +65,6 @@ subcommand 'cmd', do: `{app} cmd -h`.
 #-----------------------------------------------------------------------------
 
 
-
 _envvar = os.environ.get('TRAITLETS_APPLICATION_RAISE_CONFIG_FILE_ERROR','')
 if _envvar.lower() in {'1','true'}:
     TRAITLETS_APPLICATION_RAISE_CONFIG_FILE_ERROR = True
@@ -700,6 +699,7 @@ class Application(SingletonConfigurable):
         classes = tuple(self._classes_with_config_traits())
         loader = self._create_loader(argv, aliases, flags, classes=classes)
         self.cli_config = deepcopy(loader.load_config())
+        self.cli_config.set_default_rank(Config.CLI_RANK)
         self.update_config(self.cli_config)
         # store unparsed args in extra_args
         self.extra_args = loader.extra_args
@@ -755,16 +755,22 @@ class Application(SingletonConfigurable):
     @catch_config_error
     def load_config_file(self, filename, path=None):
         """Load config files by filename and path."""
-        filename, ext = os.path.splitext(filename)
-        new_config = Config()
-        for (config, filename) in self._load_config_files(filename, path=path, log=self.log,
+        filename = os.path.splitext(filename)[0]
+        file_config = Config()
+        loaded_config_infos = self._load_config_files(
+            filename, path=path, log=self.log,
             raise_config_file_errors=self.raise_config_file_errors,
-        ):
-            new_config.merge(config)
+        )
+        for (config, filename) in loaded_config_infos:
+            file_config.merge(config)
             self._loaded_config_files.append(filename)
-        # add self.cli_config to preserve CLI config priority
-        new_config.merge(self.cli_config)
-        self.update_config(new_config)
+        file_config.set_default_rank(Config.FILE_RANK)
+        # Preserve CLI config priority on top.
+        #
+        # Note: we don't purely rely on config-ranks here to ensure CLI on top
+        # even if ranks disabled by :meth:`Config.enable_config_priorities()`.
+        file_config.merge(self.cli_config)
+        self.update_config(file_config)
 
     def _classes_with_config_traits(self, classes=None):
         """
