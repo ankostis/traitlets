@@ -877,6 +877,12 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
     of common args, such as `ipython -c 'print 5'`, but still gets
     arbitrary config with `ipython --InteractiveShell.autoindent=False`"""
 
+    opts = set()
+
+    def _add_argparse_argument(self, *args, **kw):
+        self.opts.update(args)
+        self.parser.add_argument(*args, **kw)
+
     def _add_arguments(self, aliases=None, flags=None, classes=None):
         alias_flags = {}
         # print aliases, flags
@@ -886,7 +892,7 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
             flags = self.flags
         if classes is None:
             classes = self.classes
-        paa = self.parser.add_argument
+        paa = self._add_argparse_argument
         self.parser.set_defaults(_flags=[])
 
         ## An index of all container traits collected::
@@ -911,15 +917,28 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
                 argparse_traits[argname] = (trait, argparse_kwds)
                 paa('--'+argname, **argparse_kwds)
 
+        negatable_flags = []
+        aliases = self.aliases
         for keys, (value, _) in flags.items():
             if not isinstance(keys, tuple):
                 keys = (keys, )
             for key in keys:
-                if key in self.aliases:
-                    alias_flags[self.aliases[key]] = value
+                if key in aliases:
+                    alias_flags[aliases[key]] = value
                     continue
-                keys = ('-'+key, '--'+key) if len(key) is 1 else ('--'+key, )
+                keys = (('-' + key, '--' + key)
+                        if len(key) is 1
+                        else ('--' + key, ))
                 paa(*keys, action=_FlagAction, flag=value)
+
+                #ankostis
+                if len(value) == 1:
+                    kk, vv = next(iter(value.items()))
+                    if len(vv) == 1:
+                        kkk, vvv = next(iter(vv.items()))
+                        if isinstance(vvv, bool):
+                            negatable_flags.append(
+                                (keys, kk, kkk, not vvv))
 
         for keys, traitname in aliases.items():
             if not isinstance(keys, tuple):
@@ -945,6 +964,20 @@ class KVArgParseConfigLoader(ArgParseConfigLoader):
                     argparse_kwds['alias'] = traitname
                 keys = ('-'+key, '--'+key) if len(key) is 1 else ('--'+key, )
                 paa(*keys, **argparse_kwds)
+
+        ## Add negetables (e.g. `--no-show-config`) only if
+        #  not clashing with pre--existing ones.
+        #
+        opts = self.opts
+        for nkeys, nkk, nkkk, nvvv in negatable_flags:
+            nkeys = ['--no-' + k[2:]
+                     if k.startswith('--')
+                     else k.swapcase()
+                     for k in nkeys]
+            if not set(nkeys) & opts:
+                print(nkeys, opts)
+                paa(*nkeys, action=_FlagAction,
+                    flag={nkk: {nkkk: not nvvv}})
 
     def _convert_to_config(self):
         """self.parsed_data->self.config, parse unrecognized extra args via KVLoader."""
